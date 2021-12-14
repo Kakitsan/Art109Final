@@ -1,0 +1,449 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+	<title>Jiajie Zeng Final Project</title>
+	<meta charset="utf-8">
+	<link type="text/css" rel="stylesheet" href="style.css">
+
+
+</head>
+
+<body>
+
+	<script type="module">
+		import * as THREE from './public/build/three.module.js';
+
+		import {
+			PointerLockControls
+		} from './public/src/PointerLockControls.js';
+
+		import {
+			Lensflare,
+			LensflareElement
+		} from './public/src/lensflare.js';
+
+		import {
+			GLTFLoader
+		} from './public/src/GLTFLoader.js';
+
+
+		import {
+			Water
+		} from './public/src/water.js';
+
+
+
+
+
+		let moveForward = false;
+		let moveBackward = false;
+		let moveLeft = false;
+		let moveRight = false;
+		let canJump = false;
+
+		let prevTime = performance.now();
+		const velocity = new THREE.Vector3();
+		const direction = new THREE.Vector3();
+		const vertex = new THREE.Vector3();
+		const color = new THREE.Color();
+
+		let camera, scene, renderer, controls;
+		let water, mesh, container;
+
+		const objects = [];
+
+		let raycaster;
+
+		init();
+		animate();
+
+
+
+		function init() {
+
+			camera = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 1, 1000);
+			camera.position.x = 150;
+			camera.position.y = 50;
+
+			scene = new THREE.Scene();
+			scene.background = new THREE.Color("#ff9933");
+			scene.fog = new THREE.Fog("#ffff99", 30, 270);
+
+			const light = new THREE.HemisphereLight(0xeeeeff, 0x777788, 0.75);
+			light.position.set(0.5, 1, 0.75);
+			scene.add(light);
+
+			controls = new PointerLockControls(camera, document.body);
+
+			const blocker = document.getElementById('blocker');
+			const instructions = document.getElementById('instructions');
+
+			instructions.addEventListener('click', function() {
+
+				controls.lock();
+
+			});
+
+			controls.addEventListener('lock', function() {
+
+				instructions.style.display = 'none';
+				blocker.style.display = 'none';
+
+			});
+
+			controls.addEventListener('unlock', function() {
+
+				blocker.style.display = 'block';
+				instructions.style.display = '';
+
+			});
+
+			scene.add(controls.getObject());
+
+			const onKeyDown = function(event) {
+
+				switch (event.code) {
+
+					case 'ArrowUp':
+					case 'KeyW':
+						moveForward = true;
+						break;
+
+					case 'ArrowLeft':
+					case 'KeyA':
+						moveLeft = true;
+						break;
+
+					case 'ArrowDown':
+					case 'KeyS':
+						moveBackward = true;
+						break;
+
+					case 'ArrowRight':
+					case 'KeyD':
+						moveRight = true;
+						break;
+
+					case 'Space':
+						if (canJump === true) velocity.y += 350;
+						canJump = false;
+						break;
+
+				}
+
+			};
+
+			const onKeyUp = function(event) {
+
+				switch (event.code) {
+
+					case 'ArrowUp':
+					case 'KeyW':
+						moveForward = false;
+						break;
+
+					case 'ArrowLeft':
+					case 'KeyA':
+						moveLeft = false;
+						break;
+
+					case 'ArrowDown':
+					case 'KeyS':
+						moveBackward = false;
+						break;
+
+					case 'ArrowRight':
+					case 'KeyD':
+						moveRight = false;
+						break;
+
+				}
+
+			};
+
+			document.addEventListener('keydown', onKeyDown);
+			document.addEventListener('keyup', onKeyUp);
+
+			raycaster = new THREE.Raycaster(new THREE.Vector3(), new THREE.Vector3(0, -1, 0), 0, 10);
+
+
+			//
+
+			renderer = new THREE.WebGLRenderer({
+				antialias: true
+			});
+			renderer.setPixelRatio(window.devicePixelRatio);
+			renderer.setSize(window.innerWidth, window.innerHeight);
+			document.body.appendChild(renderer.domElement);
+
+			//
+
+			window.addEventListener('resize', onWindowResize);
+
+		}
+
+		function onWindowResize() {
+
+			camera.aspect = window.innerWidth / window.innerHeight;
+			camera.updateProjectionMatrix();
+
+			renderer.setSize(window.innerWidth, window.innerHeight);
+
+		}
+
+		function animate() {
+
+
+			requestAnimationFrame(animate);
+
+			const time = performance.now();
+
+			if (controls.isLocked === true) {
+
+				raycaster.ray.origin.copy(controls.getObject().position);
+				raycaster.ray.origin.y -= 10;
+
+				const intersections = raycaster.intersectObjects(objects);
+
+				const onObject = intersections.length > 0;
+
+				const delta = (time - prevTime) / 1000;
+
+				velocity.x -= velocity.x * 10.0 * delta;
+				velocity.z -= velocity.z * 10.0 * delta;
+
+				velocity.y -= 9.8 * 100.0 * delta; // 100.0 = mass
+
+				direction.z = Number(moveForward) - Number(moveBackward);
+				direction.x = Number(moveRight) - Number(moveLeft);
+				direction.normalize(); // this ensures consistent movements in all directions
+
+				if (moveForward || moveBackward) velocity.z -= direction.z * 400.0 * delta;
+				if (moveLeft || moveRight) velocity.x -= direction.x * 400.0 * delta;
+
+				if (onObject === true) {
+
+					velocity.y = Math.max(0, velocity.y);
+					canJump = true;
+
+				}
+
+				controls.moveRight(-velocity.x * delta);
+				controls.moveForward(-velocity.z * delta);
+
+				controls.getObject().position.y += (velocity.y * delta); // new behavior
+
+				if (controls.getObject().position.y < 10) {
+
+					velocity.y = 0;
+					controls.getObject().position.y = 10;
+
+					canJump = true;
+
+				}
+
+			}
+
+			prevTime = time;
+
+			renderer.render(scene, camera);
+
+		}
+
+		const textureLoader = new THREE.TextureLoader();
+
+		const textureFlare = textureLoader.load('./assets/lensflare.png');
+
+		addLight(0.995, 0.2, 0.7, 6000, 7000, -4000);
+
+		function addLight(h, s, l, x, y, z) {
+
+			const light = new THREE.PointLight(0xffffff, .8, 2000);
+			light.color.setHSL(h, s, l);
+			light.position.set(x, y, z);
+			scene.add(light);
+
+			const lensflare = new Lensflare();
+
+			lensflare.addElement(new LensflareElement(textureFlare, 500, 0, light.color));
+
+
+			light.add(lensflare);
+
+		}
+
+
+
+
+		// gltf loader
+
+		const loader = new GLTFLoader();
+
+		loader.load(
+			'./assets/land1.glb',
+			function(gltf) {
+				scene.add(gltf.scene);
+
+				const model = gltf.scene;
+
+				model.position.set(150, 1, 100);
+				model.scale.set(3, 3, 3);
+
+			});
+
+		loader.load(
+			'./assets/land2.glb',
+			function(gltf) {
+				scene.add(gltf.scene);
+
+				const model = gltf.scene;
+
+				model.position.set(145, 1, -200);
+				model.scale.set(3, 3, 3);
+
+			});
+
+		//
+		loader.load(
+			'./assets/building1.glb',
+			function(gltf) {
+				scene.add(gltf.scene);
+
+				const model = gltf.scene;
+
+				model.position.set(150, 5, 300);
+				model.scale.set(1, 1, 1);
+
+			});
+
+		loader.load(
+			'./assets/building2.glb',
+			function(gltf) {
+				scene.add(gltf.scene);
+
+				const model = gltf.scene;
+
+				model.position.set(-80, 5, -300);
+				model.scale.set(1, 1, 1);
+
+
+			});
+
+			loader.load(
+				'./assets/building2.glb',
+				function(gltf) {
+					scene.add(gltf.scene);
+
+					const model = gltf.scene;
+
+					model.position.set(300, 5, -340);
+					model.scale.set(1, 1, 1);
+
+
+				});
+
+
+
+		loader.load(
+			'./assets/building3.glb',
+			function(gltf) {
+				scene.add(gltf.scene);
+
+				const model = gltf.scene;
+
+				model.position.set(400, 5, 150);
+				model.scale.set(1, 1, 1);
+
+			});
+
+			loader.load(
+				'./assets/building3.glb',
+				function(gltf) {
+					scene.add(gltf.scene);
+
+					const model = gltf.scene;
+
+					model.position.set(400, 5, -50);
+					model.scale.set(1, 1, 1);
+
+				});
+
+				loader.load(
+					'./assets/building3.glb',
+					function(gltf) {
+						scene.add(gltf.scene);
+
+						const model = gltf.scene;
+
+						model.position.set(-150, 5, -50);
+						model.scale.set(1, 1, 1);
+
+					});
+
+					loader.load(
+						'./assets/building3.glb',
+						function(gltf) {
+							scene.add(gltf.scene);
+
+							const model = gltf.scene;
+
+							model.position.set(145, 5, -400);
+							model.scale.set(1, 1, 1);
+
+						});
+
+
+		// Water Floor
+
+		const waterGeometry = new THREE.PlaneGeometry(10000, 10000);
+
+		water = new Water(
+			waterGeometry, {
+				textureWidth: 1512,
+				textureHeight: 1512,
+				waterNormals: new THREE.TextureLoader().load('assets/water.jpg', function(texture) {
+
+					texture.wrapS = texture.wrapT = THREE.RepeatWrapping;
+
+				}),
+				sunDirection: new THREE.Vector3(),
+				sunColor: 0xffffff,
+				waterColor: 0x001e0f,
+				distortionScale: 3.7,
+				fog: scene.fog !== undefined
+			}
+		);
+
+		water.rotation.x = -Math.PI / 2;
+
+		scene.add(water);
+
+	</script>
+
+	<div id="blocker">
+
+		<div id="instructions">
+			<span style="font-size:48px">Polar Bear's Grave</span><br><br>
+			<span style="font-size:30px">Jiajie Zeng</span><br><br>
+			<span style="font-size:18px; align: center;">
+				<br>
+				<span style="font-size:30px">Artist Statement</span>
+				<br>
+				With the rapid development of cities, human activities have greatly affected climate changes, causing the rapid melting of glaciers and rising sea levels. This undoubtedly greatly affects the activities and reproduction of plants and animals. Those facts inspire me a lot about the need of rising the problem and the alarm for the protection of the environment. Thus, I use the polar bear as the subject of this project to create a 3D modeling environment with irony tone and the problem itself. I continue to explore more functions of three.js, such as water.js and lensflare.js. I create 3D modeling with blender and edit the picture with Adobe Illustrator. The polar bears' graves are at the center of the scene. And there are many cities around it, which make the polar bears breathless. And the ocean creates a sense of escaping. I hope that when viewers see this 3D visual website, they can stimulate their environmental awareness of nature.
+				</span>
+
+				<span style="font-size:22px;">
+					<br><br>
+					Move: WASD<br><br>
+					Jump: SPACE<br><br>
+					Spin: MOUSE<br><br>
+				</span>
+
+
+
+			</div>
+		</div>
+</body>
+
+</html>
